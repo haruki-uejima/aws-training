@@ -1,0 +1,613 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Create ECS
+
+# ------------------------------------------------------------#
+#   Input Parameters
+# ------------------------------------------------------------#
+Parameters:
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.99.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.99.10.0/24
+
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.99.11.0/24
+
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.99.20.0/24
+
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.99.21.0/24
+
+  # クラスター
+  ClusterName:
+    Description: Please enter the Cluster name
+    Type: String
+
+  # デプロイするコンテナイメージのタグを指定する。デフォルトはlatest.
+  ApplicationImageTag:
+    Type: String
+    Description: Application Docker Image Tag
+    Default: latest
+
+  # データベースに接続するパスワードを入力する
+  DatabasePassword:
+    Type: String
+    Description: Database password
+    NoEcho: "true"
+
+  # キーペア
+  Keypairname:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Enter keypair name
+
+  # ECSコンテナインスタンスの最新のAMIのIDを取得
+  ApplicationImageId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+
+  # サービスが実行するタスクの数を指定する
+  DesiredCount:
+    Type: String
+    Description: Desired Task number
+
+# ------------------------------------------------------------#
+#   Resources
+# ------------------------------------------------------------#
+Resources:
+  # ------------------------------------------------------------#
+  #   ECR Create
+  # ------------------------------------------------------------#
+  TodobackendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: cloudtech/todobackend2
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Untagged images",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 7
+                },
+                "action": {"type": "expire"
+                }
+              }
+            ]
+          }
+
+  # ------------------------------------------------------------#
+  #   VPC Create
+  # ------------------------------------------------------------#
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  # インターネットゲートウェイ作成
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  # インターネットゲートウェイをVPCにアタッチする
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # パブリックサブネット1を作成
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      # 配列
+      # !GetAZs "" = [ "ap-northeast-1a", "ap-northeast-1c", "ap-northeast-1d",]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
+
+  # パブリックサブネット2を作成
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
+
+  # プライベートサブネット1を作成
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
+
+  # プライベートサブネット2を作成
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
+
+  # ルートテーブル（パブリックサブネット用共通）作成
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  # ルートテーブル（プライベートサブネット用共通）作成
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  # NATGatewayをパブリックサブネットに作成する
+  NatGatewayPublic1:
+    Type: AWS::EC2::NatGateway
+    DependsOn: EIP
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - EIP
+          # 割り当てID
+          - AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # NATGateway用のルーティングをプライベートサブネットのルートテーブルに追加する
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NatGatewayPublic1
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayPublic1
+
+  # ------------------------------------------------------------#
+  #   ECS Create
+  # ------------------------------------------------------------#
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ClusterName
+
+  ApplicationTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: todobackend
+      Volumes:
+        - Name: public
+          Host:
+            SourcePath: /data/public
+      ContainerDefinitions:
+        - Name: todobackend
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/cloudtech/todobackend:${ApplicationImageTag}
+          MemoryReservation: 395
+          Cpu: 245
+          MountPoints:
+            - SourceVolume: public
+              ContainerPath: /public
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: todobackend.settings_release
+            - Name: MYSQL_HOST
+              Value: !Sub ${ApplicationDatabase.Endpoint.Address}
+            - Name: MYSQL_USER
+              Value: todobackend
+            - Name: MYSQL_PASSWORD
+              Value: !Ref DatabasePassword
+            - Name: MYSQL_DATABASE
+              Value: todobackend
+            - Name: SECRET_KEY
+              Value: some-random-secret-should-be-here
+          Command:
+            - uwsgi
+            - --http=0.0.0.0:8000
+            - --module=todobackend.wsgi
+            - --master
+            - --die-on-term
+            - --processes=4
+            - --threads=2
+            - --check-static=/public
+          PortMappings:
+            - ContainerPort: 8000
+              HostPort: 0
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub /${AWS::StackName}/ecs/todobackend
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: docker
+        - Name: collectstatic
+          Essential: false
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/cloudtech/todobackend:${ApplicationImageTag}
+          MemoryReservation: 6
+          Cpu: 5
+          MountPoints:
+            - SourceVolume: public
+              ContainerPath: /public
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: todobackend.settings_release
+          Command:
+            - python3
+            - manage.py
+            - collectstatic
+            - --no-input
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub /${AWS::StackName}/ecs/todobackend
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: docker
+
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /${AWS::StackName}/ecs/todobackend
+      RetentionInDays: 7
+
+  ApplicationService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ApplicationAutoscaling
+      - ApplicationLogGroup
+      - ApplicationLoadBalancerHttpListener
+    Properties:
+      TaskDefinition: !Ref ApplicationTaskDefinition
+      Cluster: !Ref Cluster
+      DesiredCount: !Ref DesiredCount
+      LoadBalancers:
+        - ContainerName: todobackend
+          ContainerPort: 8000
+          TargetGroupArn: !Ref ApplicationServiceTargetGroup
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+
+  # ------------------------------------------------------------#
+  #   RDS Create
+  # ------------------------------------------------------------#
+  ApplicationDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: MySQL
+      EngineVersion: 8.0
+      DBInstanceClass: db.t2.micro
+      AllocatedStorage: 10
+      StorageType: gp2
+      MasterUsername: todobackend
+      MasterUserPassword:
+        Ref: DatabasePassword
+      DBName: todobackend
+      VPCSecurityGroups:
+        - !Ref ApplicationDatabaseSecurityGroup
+      DBSubnetGroupName: !Ref ApplicationDatabaseSubnetGroup
+      # ここはマルチAZにしたい
+      MultiAZ: "false"
+      AvailabilityZone: !Sub ${AWS::Region}a
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db
+  ApplicationDatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Application Database Subnet Group
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-subnet-group
+  # セキュリティグループ（RDS）
+  ApplicationDatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName} Application Database Security Group
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 192.0.2.0/32
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-sg
+  ApplicationToApplicationDatabaseIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      GroupId: !Ref ApplicationDatabaseSecurityGroup
+      SourceSecurityGroupId: !Ref ApplicationAutoscalingSecurityGroup
+  ApplicationToApplicationDatabaseEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      GroupId: !Ref ApplicationAutoscalingSecurityGroup
+      DestinationSecurityGroupId: !Ref ApplicationDatabaseSecurityGroup
+  # セキュリティグループ（EC2）
+  ApplicationAutoscalingSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName} Application Autoscaling Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  # ------------------------------------------------------------#
+  #   ALB Create
+  # ------------------------------------------------------------#
+  ApplicationServiceTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Protocol: HTTP
+      # ポート
+      Port: 8000
+      VpcId: !Ref VPC
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 30
+  ApplicationLoadBalancerHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - TargetGroupArn: !Ref ApplicationServiceTargetGroup
+          Type: forward
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ApplicationLoadBalancerSecurityGroup
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 30
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-alb
+  # セキュリティグループ（ALB）
+  ApplicationLoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Application Load Balancer Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: ${AWS::StackName}-alb-sg
+  # セキュリティグループ（EC2はALBからの通信を許可）
+  ApplicationLoadBalancerToApplicationIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 32768
+      ToPort: 60999
+      GroupId: !Ref ApplicationAutoscalingSecurityGroup
+      SourceSecurityGroupId: !Ref ApplicationLoadBalancerSecurityGroup
+  # セキュリティグループ（ALBはEC2への通信を許可）
+  ApplicationLoadBalancerToApplicationEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 32768
+      ToPort: 60999
+      GroupId: !Ref ApplicationLoadBalancerSecurityGroup
+      DestinationSecurityGroupId: !Ref ApplicationAutoscalingSecurityGroup
+
+  # ------------------------------------------------------------#
+  #   Create AutoScaling
+  # ------------------------------------------------------------#
+  # オートスケーリング
+  ApplicationAutoscaling:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Count: 0
+        Timeout: PT5M
+    Properties:
+      LaunchConfigurationName: !Ref ApplicationAutoscalingLaunchConfiguration
+      MinSize: 0
+      MaxSize: 4
+      DesiredCapacity: 0
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-ApplicationAutoscaling-instance
+          PropagateAtLaunch: "true"
+  # 起動設定
+  ApplicationAutoscalingLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      # 最新のAMIのID
+      ImageId: !Ref ApplicationImageId
+      InstanceType: t2.micro
+      KeyName: !Ref Keypairname
+      IamInstanceProfile: !Ref ApplicationAutoscalingInstanceProfile
+      SecurityGroups:
+        - !GetAtt "ApplicationAutoscalingSecurityGroup.GroupId"
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            echo ECS_CLUSTER=${CLUSTERNAME} > /etc/ecs/ecs.config
+            mkdir -p /data/public
+            chown -R 1000:1000 /data
+          - { CLUSTERNAME: !Ref ClusterName }
+  # インスタンスプロファイル（EC2インスタンスにIAMロールをアタッチする時に必要な部品）
+  ApplicationAutoscalingInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - Ref: ApplicationAutoscalingInstanceRole
+  # ロール指定
+  ApplicationAutoscalingInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ECSContainerInstancePermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RegisterContainerInstance
+                  - ecs:DeregisterContainerInstance
+                  - ecs:UpdateContainerInstancesState
+                # 既存のクラスターにのみ対象
+                Resource: !Sub ${Cluster.Arn}
+              - Effect: Allow
+                Action:
+                  - ecs:DiscoverPollEndpoint
+                  - ecs:Submit*
+                  - ecs:Poll
+                  - ecs:StartTelemetrySession
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                # 対象のロググループにのみ権限を絞っている
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${AWS::StackName}*
+# ------------------------------------------------------------#
+#   Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+  PublicURL:
+    Description: Public DNS name of Application Load Balancer
+    Value: !Sub ${ApplicationLoadBalancer.DNSName}
