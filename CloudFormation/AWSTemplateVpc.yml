@@ -183,7 +183,7 @@ Resources:
       SubnetId: !Ref PrivateSubnetDataC
 
   # ------------------------------------------------------------#
-  # NAT
+  #   NAT
   # ------------------------------------------------------------#
   NatGatewayPublicA:
     Type: AWS::EC2::NatGateway
@@ -230,7 +230,6 @@ Outputs:
     Value: !Ref PublicSubnetFrontACIDR
     Export:
       Name: front-subnet-a-cidr
-
   PublicSubnetFrontC:
     Value: !Ref PublicSubnetFrontC
     Export:
