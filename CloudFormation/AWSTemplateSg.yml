@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create SG
+
+# ------------------------------------------------------------#
+# Parameters
+# ------------------------------------------------------------#
+
+# ------------------------------------------------------------#
+# Resources
+# ------------------------------------------------------------#
+Resources:
+  # ------------------------------------------------------------#
+  #   SG
+  # ------------------------------------------------------------#
+  SecurityGroupFront:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName} front
+      GroupName: front-sg
+      VpcId: !ImportValue vpc
+      Tags:
+        - Key: Name
+          Value: front-sg
+
+  SecurityGroupApp:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName} app
+      GroupName: app-sg
+      VpcId: !ImportValue vpc
+      Tags:
+        - Key: Name
+          Value: app-sg
+
+  SecurityGroupData:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName} data
+      GroupName: data-sg
+      VpcId: !ImportValue vpc
+      Tags:
+        - Key: Name
+          Value: data-sg
+
+  FrontToFrontIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupFront.GroupId
+      GroupId: !GetAtt SecurityGroupFront.GroupId
+
+  AppToFrontIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupApp.GroupId
+      GroupId: !GetAtt SecurityGroupFront.GroupId
+
+  HttpToFrontIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt SecurityGroupFront.GroupId
+
+  HttpsToFrontIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt SecurityGroupFront.GroupId
+
+  IcmpToFrontIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: icmp
+      FromPort: -1
+      ToPort: -1
+      CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt SecurityGroupFront.GroupId
+
+  AppToAppIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupApp.GroupId
+      GroupId: !GetAtt SecurityGroupApp.GroupId
+
+  FrontToAppIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupFront.GroupId
+      GroupId: !GetAtt SecurityGroupApp.GroupId
+
+  FrontToDataIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupFront.GroupId
+      GroupId: !GetAtt SecurityGroupData.GroupId
+
+  AppToDataIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupApp.GroupId
+      GroupId: SecurityGroupData.GroupId
+
+  DataToDataIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupData.GroupId
+      GroupId: SecurityGroupData.GroupId
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+  SecurityGroupFront:
+    Value: !Ref SecurityGroupFront
+    Export:
+      Name: front-sg
+  SecurityGroupApp:
+    Value: !Ref SecurityGroupApp
+    Export:
+      Name: app-sg
+  SecurityGroupData:
+    Value: !Ref SecurityGroupData
+    Export:
+      Name: data-sg
