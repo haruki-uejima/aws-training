@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create EC2
+
+# ------------------------------------------------------------#
+# Parameters
+# ------------------------------------------------------------#
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  InstanceVolumeType:
+    Type: String
+    Default: gp2
+  InstanceVolumeSize:
+    Type: String
+    Default: 10
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+# ------------------------------------------------------------#
+# Resources
+# ------------------------------------------------------------#
+Resources:
+  # ------------------------------------------------------------#
+  #  EC2
+  # ------------------------------------------------------------#
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref MyInstanceProfile
+      Tags:
+        - Key: Name
+          Value: bt-ec2
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      NetworkInterfaces:
+        - GroupSet: !ImportValue front-sg
+          SubnetId: !ImportValue front-subnet-a
+          AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          DeleteOnTermination: true
+      EbsOptimized: true
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            VolumeType: !Ref InstanceVolumeType
+            VolumeSize: !Ref InstanceVolumeSize
+  MyEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref EC2Instance
+  MyInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - SSMInstanceProfile
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+  InstanceId:
+    Value: !Ref EC2Instance
+
+  InstanceIPAddress:
+    Value: !Ref MyEIP
+
+  AZ:
+    Value: !GetAtt EC2Instance.AvailabilityZone
