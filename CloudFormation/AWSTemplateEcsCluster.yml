@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: “2010-09-09”
+Description: Create ECS Cluster
+
+# ------------------------------------------------------------#
+#   Resources
+# ------------------------------------------------------------#
+Resources:
+  # ------------------------------------------------------------#
+  #   ECS Cluster
+  # ------------------------------------------------------------#
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub “ecs-cluster”
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+  ECSCluster:
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub “ecs-cluster”

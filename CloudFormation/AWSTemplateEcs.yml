@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: “2010-09-09”
 Description: Create ECS ALB
 
 # ------------------------------------------------------------#
-#  Parameters
+#   Parameters
 # ------------------------------------------------------------#
 Parameters:
   ECSTaskRole:
