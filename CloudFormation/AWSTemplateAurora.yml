@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create Aurora
+
+# ------------------------------------------------------------#
+#   Parameters
+# ------------------------------------------------------------#
+Parameters:
+  ServicePrefix:
+    Type: String
+    Default: "test"
+    AllowedValues:
+      - "test"
+  DataSecurityGroupId:
+    Description: data-sg
+    Type: String
+    Default: "sg-xxxxxxx"
+    AllowedValues:
+      - "sg-xxxxxxx"
+  DBMasterUserName:
+    Type: String
+    Default: admin
+  DBMasterUserPassword:
+    Type: String
+  DBEngine:
+    Type: String
+    Default: aurora-mysql
+  DBEngineVersion:
+    Type: String
+    Default: 5.7
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.small
+
+# ------------------------------------------------------------#
+#  Resources
+# ------------------------------------------------------------#
+Resources:
+  # ------------------------------------------------------------#
+  #  Aurora
+  # ------------------------------------------------------------#
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      # default.aurora-mysql5.7 使用
+      DBClusterIdentifier: !Sub ${ServicePrefix}-aurora-cluster
+      DeletionProtection: true
+      DBSubnetGroupName: !Ref AuroraSubnetGroup
+      Engine: !Ref DBEngine
+      EngineVersion: !Ref DBEngineVersion
+      MasterUsername: !Ref DBMasterUserName
+      MasterUserPassword: !Ref DBMasterUserPassword
+      VpcSecurityGroupIds:
+        - !Ref DataSecurityGroupId
+      EnableCloudwatchLogsExports:
+        - audit
+        - error
+        - general
+        - slowquery
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceIdentifier: !Sub ${ServicePrefix}-aurora-writer-01
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: !Ref DBEngine
+
+  AuroraSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub subnetgroup
+      SubnetIds:
+        - Fn::ImportValue: !Sub "data-subnet-a"
+        - Fn::ImportValue: !Sub "data-subnet-c"
