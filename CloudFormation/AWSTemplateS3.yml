@@ -8,8 +8,6 @@ Parameters:
   ServicePrefix:
     Type: String
     Default: "ui"
-    AllowedValues:
-      - "ui"
 
 # ------------------------------------------------------------#
 #   Resources
