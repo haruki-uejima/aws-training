@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create S3,CloudFront
+
+# ------------------------------------------------------------#
+#   Parameters
+# ------------------------------------------------------------#
+Parameters:
+  ServicePrefix:
+    Type: String
+    Default: "ui"
+    AllowedValues:
+      - "ui"
+
+# ------------------------------------------------------------#
+#   Resources
+# ------------------------------------------------------------#
+Resources:
+  # ------------------------------------------------------------#
+  #   S3
+  # ------------------------------------------------------------#
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub "S3-${ServicePrefix}-Bucket"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          Action: s3:GetObject
+          Effect: Allow
+          Resource: !Sub arn:aws:s3:::${S3Bucket}/*
+          Principal:
+            AWS: !Sub arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginAccessIdentity}
+
+  # ------------------------------------------------------------#
+  #   CloudFront
+  # ------------------------------------------------------------#
+  CloudFrontOriginAccessIdentity:
+    Type: "AWS::CloudFront::CloudFrontOriginAccessIdentity"
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref AWS::StackName
+
+  CloudFrontDistribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig:
+        Origins:
+          Id: !Sub "S3origin-${S3Bucket}"
+          DomainName: !GetAtt S3Bucket.DomainName
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}"
+        Enabled: true
+        HttpVersion: http2
+        IPV6Enabled: false
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          TargetOriginId: !Sub "S3origin-${S3Bucket}"
+          ForwardedValues:
+            QueryString: false
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+        CustomErrorResponses:
+          ErrorCode: 403
+          ErrorCachingMinTTL: 10
+          ResponsePagePath: /
+          ResponseCode: 200
