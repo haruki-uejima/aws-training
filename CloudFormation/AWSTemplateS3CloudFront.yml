@@ -2,21 +2,20 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Create S3,CloudFront
 
 # ------------------------------------------------------------#
-# Input Parameters
+#   Parameters
 # ------------------------------------------------------------#
 Parameters:
   ServicePrefix:
     Type: String
     Default: "ui"
-    AllowedValues:
-      - "ui"
-      - "pipeline"
 
-  # ------------------------------------------------------------#
-  #  S3
-  # ------------------------------------------------------------#
-  # S3 Create
+# ------------------------------------------------------------#
+#   Resources
+# ------------------------------------------------------------#
 Resources:
+  # ------------------------------------------------------------#
+  #   S3
+  # ------------------------------------------------------------#
   S3Bucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -41,9 +40,8 @@ Resources:
             AWS: !Sub arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginAccessIdentity}
 
   # ------------------------------------------------------------#
-  #  CloudFront
+  #   CloudFront
   # ------------------------------------------------------------#
-  # CloudFront Create
   CloudFrontOriginAccessIdentity:
     Type: "AWS::CloudFront::CloudFrontOriginAccessIdentity"
     Properties:
