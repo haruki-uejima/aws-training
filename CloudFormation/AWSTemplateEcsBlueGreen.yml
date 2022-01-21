@@ -1,0 +1,316 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create ECS Fargate, ALB, CodeDeploy BlueGreen.
+
+# ------------------------------------------------------------#
+#   Parameters
+# ------------------------------------------------------------#
+Parameters:
+  ServicePrefix:
+    Type: String
+    Default: "example"
+  EnvPrefix:
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - "dev"
+      - "stg"
+      - "prd"
+  ECSTaskPort:
+    Type: String
+    Default: "3000"
+  ECSTaskCPUUnit:
+    Type: String
+    Default: "1024"
+  ECSTaskMemory:
+    Type: String
+    Default: "2048"
+  ECSCount1:
+    Type: Number
+    Default: "01"
+  ECSCount2:
+    Type: Number
+    Default: "02"
+  HealthCheckPath:
+    Type: String
+    Default: "/health-check"
+
+# ------------------------------------------------------------#
+#   Resources
+# ------------------------------------------------------------#
+Resources:
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ServicePrefix}-${EnvPrefix}-task-${ECSCount1}"
+      Cpu: !Ref ECSTaskCPUUnit
+      Memory: !Ref ECSTaskMemory
+      TaskRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${ServicePrefix}-${EnvPrefix}-task-role"
+      ExecutionRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${ServicePrefix}-${EnvPrefix}-task-role"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Sub "${ServicePrefix}-${EnvPrefix}"
+          Essential: true
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.http://amazonaws.com/${ServicePrefix}/${EnvPrefix}"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub "/ecs/${ServicePrefix}-${EnvPrefix}-task"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          PortMappings:
+            - ContainerPort: !Ref ECSTaskPort
+              HostPort: !Ref ECSTaskPort
+              Protocol: tcp
+          Environment:
+            - Name: PORT
+              Value: !Ref ECSTaskPort
+            - Name: HOST_PORT
+              Value: !Ref ECSTaskPort
+            - Name: NODE_ENV
+              Value: development
+          # Secrets:
+          #   - Name:
+          #   - Valuefrom:
+
+  ECSCloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ServicePrefix}-${EnvPrefix}-task"
+
+  ECSALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-alb-${ECSCount1}"
+      Scheme: internet-facing
+      Subnets:
+        - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-front-subnet-a"
+        - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-front-subnet-c"
+      SecurityGroups:
+        - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-front-sg"
+
+  ECSTargetGroup1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-tg-${ECSCount1}"
+      VpcId:
+        Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-vpc"
+      Protocol: HTTP
+      Port: 80
+      TargetType: ip
+      HealthCheckPath: !Ref HealthCheckPath
+  ECSTargetGroup2:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-tg-${ECSCount2}"
+      VpcId:
+        Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-vpc"
+      Protocol: HTTP
+      Port: 80
+      TargetType: ip
+      HealthCheckPath: !Ref HealthCheckPath
+
+  ECSALBListener1:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ECSTargetGroup1
+      LoadBalancerArn: !Ref ECSALB
+      Port: 80
+      Protocol: HTTP
+  # ECSALBListener2:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     DefaultActions:
+  #     - Type: forward
+  #       TargetGroupArn: !Ref ECSTargetGroup2
+  #     LoadBalancerArn: !Ref ECSALB
+  #     Port: 8080
+  #     Protocol: HTTP
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ECSALBListener1
+    Properties:
+      ServiceName: !Sub "${ServicePrefix}-${EnvPrefix}-service-${ECSCount1}"
+      Cluster:
+        Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-cluster-${ECSCount1}"
+      DesiredCount: 1
+      DeploymentController:
+        Type: CODE_DEPLOY
+      TaskDefinition: !Ref ECSTaskDefinition
+      LoadBalancers:
+        - ContainerName: !Ref ECSContainerName
+          ContainerPort: !Ref ECSTaskPort
+          TargetGroupArn: !Ref ECSTargetGroup1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-app-sg"
+          Subnets:
+            - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-app-subnet-a"
+            - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-app-subnet-c"
+
+  # ------------------------------------------------------------#
+  # Lambda
+  # ------------------------------------------------------------#
+  LambdaFunction:
+    Type: "AWS::Lambda::Function"
+    DeletionPolicy: "Delete"
+    Properties:
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import logging
+          import cfnresponse
+          from botocore.exceptions import ClientError
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          client = boto3.client('codedeploy')
+
+          def lambda_handler(event, context):
+
+              appName = event['ResourceProperties']['appName']
+              deploymentGroup = event['ResourceProperties']['deploymentGroup']
+              clusterName = event['ResourceProperties']['ECSClusterName']
+              serviceName = event['ResourceProperties']['ECSServiceName']
+
+              print('REQUEST RECEIVED:\n' + json.dumps(event))
+              responseData = {}
+              try:
+                res = client.create_application(
+                    applicationName=appName,
+                    computePlatform='ECS'
+                )
+                http://logger.info(res)
+                http://logger.info("SUCCESS: CodeDeploy Application created.")
+                res = client.create_deployment_group(
+                    applicationName=appName,
+                    deploymentGroupName=deploymentGroup,
+                    deploymentConfigName='CodeDeployDefault.ECSAllAtOnce',
+                    serviceRoleArn=event['ResourceProperties']['CodeDeployServiceRoleArn'],
+                    autoRollbackConfiguration={
+                        'enabled': True,
+                        'events': [
+                            'DEPLOYMENT_FAILURE',
+                        ]
+                    },
+                    deploymentStyle={
+                        'deploymentType': 'BLUE_GREEN',
+                        'deploymentOption': 'WITH_TRAFFIC_CONTROL'
+                    },
+                    blueGreenDeploymentConfiguration={
+                        'terminateBlueInstancesOnDeploymentSuccess': {
+                            'action': 'TERMINATE',
+                            'terminationWaitTimeInMinutes': 30
+                        },
+                        'deploymentReadyOption': {
+                            'actionOnTimeout': 'CONTINUE_DEPLOYMENT',
+                        }
+                    },
+                    loadBalancerInfo={
+                        'targetGroupPairInfoList': [
+                            {
+                                'targetGroups': [
+                                    {
+                                        'name': event['ResourceProperties']['TargetGroup1']
+                                    },
+                                    {
+                                        'name': event['ResourceProperties']['TargetGroup2']
+                                    },
+                                ],
+                                'prodTrafficRoute': {
+                                    'listenerArns': [
+                                        event['ResourceProperties']['ALBListener1'],
+                                    ]
+                                },
+                            },
+                        ]
+                    },
+                    ecsServices=[
+                        {
+                            'serviceName': serviceName,
+                            'clusterName': clusterName
+                        },
+                    ]
+                )
+              except ClientError as e:
+                  logger.error("ERROR: Something error!")
+                  logger.error(e)
+                  responseData = {'error': str(e)}
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+              else:
+                  http://logger.info(res)
+                  http://logger.info(
+                      "SUCCESS: CodeDeploy Application and DeploymentGroup created.")
+                  return cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.8
+      Timeout: 10
+  # ------------------------------------------------------------#
+  # Custom Resource
+  # ------------------------------------------------------------#
+  CreateCodeDeploy:
+    Type: Custom::CreateCodeDeploy
+    DependsOn:
+      - ECSService
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
+      Region: !Ref AWS::Region
+      ECSClusterName: !Sub "${ServicePrefix}-${EnvPrefix}-cluster-${ECSCount1}"
+      ECSServiceName: !Sub "${ServicePrefix}-${EnvPrefix}--service-${ECSCount1}"
+      CodeDeployServiceRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${ServicePrefix}-${EnvPrefix}-deploy-role"
+      TargetGroup1: !Sub "${ServicePrefix}-${EnvPrefix}-tg-${ECSCount1}"
+      TargetGroup2: !Sub "${ServicePrefix}-${EnvPrefix}-tg-${ECSCount2}"
+      ALBListener1: !Ref ECSALBListener1
+      # ALBListener2: !Ref ECSALBListener2
+      appName: !Sub "AppECS-${ServicePrefix}-${EnvPrefix}-cluster-${ECSCount1}-${ServicePrefix}-${EnvPrefix}-service-${ECSCount1}"
+      deploymentGroup: !Sub "DgpECS-${ServicePrefix}-${EnvPrefix}-cluster-${ECSCount1}-${ServicePrefix}-${EnvPrefix}-service-${ECSCount1}"
+  # ------------------------------------------------------------#
+  # IAMRole For CustomResource Lambda
+  # ------------------------------------------------------------#
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - http://lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSCodeDeployFullAccess
+  LambdaPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: LambdaPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:*
+              - logs:*
+            Resource: "*"
+          - Effect: Allow
+            Resource: "*"
+            Action:
+              - iam:PassRole
+            Condition:
+              StringEqualsIfExists:
+                iam:PassedToService:
+                  - http://codedeploy.amazonaws.com
+      Roles:
+        - !Ref LambdaRole
