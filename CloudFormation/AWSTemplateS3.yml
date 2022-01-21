@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create S3
+
+# ------------------------------------------------------------#
+#   Parameters
+# ------------------------------------------------------------#
+Parameters:
+  ServicePrefix:
+    Type: String
+    Default: "example"
+  EnvPrefix:
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - "dev"
+      - "stg"
+      - "prd"
+
+# ------------------------------------------------------------#
+#   Resources
+# ------------------------------------------------------------#
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub "${ServicePrefix}-${EnvPrefix}-S3-Bucket"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          Action: s3:GetObject
+          Effect: Allow
+          Resource: !Sub arn:aws:s3:::${S3Bucket}/*
+          Principal:
+            AWS: !Sub arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginAccessIdentity}
+
+# ------------------------------------------------------------#
+#   Outputs
+# ------------------------------------------------------------#
+Outputs:
+  S3Bucket:
+    Value: !Ref S3Bucket
+    Export:
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-S3-Bucket"
