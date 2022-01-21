@@ -7,15 +7,14 @@ Description: Create Aurora
 Parameters:
   ServicePrefix:
     Type: String
-    Default: "test"
-    AllowedValues:
-      - "test"
-  DataSecurityGroupId:
-    Description: data-sg
+    Default: "example"
+  EnvPrefix:
     Type: String
-    Default: "sg-xxxxxxx"
+    Default: "dev"
     AllowedValues:
-      - "sg-xxxxxxx"
+      - "dev"
+      - "stg"
+      - "prd"
   DBMasterUserName:
     Type: String
     Default: admin
@@ -35,14 +34,10 @@ Parameters:
 #  Resources
 # ------------------------------------------------------------#
 Resources:
-  # ------------------------------------------------------------#
-  #  Aurora
-  # ------------------------------------------------------------#
   AuroraCluster:
     Type: AWS::RDS::DBCluster
     Properties:
-      # default.aurora-mysql5.7 使用
-      DBClusterIdentifier: !Sub ${ServicePrefix}-aurora-cluster
+      DBClusterIdentifier: !Sub "${ServicePrefix}-${EnvPrefix}-aurora-cluster"
       DeletionProtection: true
       DBSubnetGroupName: !Ref AuroraSubnetGroup
       Engine: !Ref DBEngine
@@ -50,18 +45,18 @@ Resources:
       MasterUsername: !Ref DBMasterUserName
       MasterUserPassword: !Ref DBMasterUserPassword
       VpcSecurityGroupIds:
-        - !Ref DataSecurityGroupId
+        - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-data-sg"
       EnableCloudwatchLogsExports:
         - audit
         - error
         - general
         - slowquery
 
-  AuroraInstance:
+  AuroraInstanceA:
     Type: AWS::RDS::DBInstance
     Properties:
       DBClusterIdentifier: !Ref AuroraCluster
-      DBInstanceIdentifier: !Sub ${ServicePrefix}-aurora-writer-01
+      DBInstanceIdentifier: !Sub "${ServicePrefix}-${EnvPrefix}-aurora-writer-01"
       DBInstanceClass: !Ref DBInstanceClass
       Engine: !Ref DBEngine
 
@@ -70,5 +65,5 @@ Resources:
     Properties:
       DBSubnetGroupDescription: !Sub subnetgroup
       SubnetIds:
-        - Fn::ImportValue: !Sub "data-subnet-a"
-        - Fn::ImportValue: !Sub "data-subnet-c"
+        - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-data-subnet-a"
+        - Fn::ImportValue: !Sub "${ServicePrefix}-${EnvPrefix}-data-subnet-c"

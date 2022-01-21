@@ -5,38 +5,70 @@ Description: Create VPC, Subnet, IGW, NAT
 #   Parameters
 # ------------------------------------------------------------#
 Parameters:
+  ServicePrefix:
+    Type: String
+    Default: "example"
+  EnvPrefix:
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - "dev"
+      - "stg"
+      - "prd"
   VpcCIDR:
     Type: String
-    Default: 10.99.0.0/16
-
+    Default: "10.18.0.0/16"
+    AllowedValues:
+      - "10.18.0.0/16"
+      - "10.17.0.0/16"
+      - "10.16.0.0/16"
   PublicSubnetFrontACIDR:
     Type: String
-    Default: 10.99.10.0/24
+    Default: "10.18.0.0/16"
+    AllowedValues:
+      - "10.18.0.0/16"
+      - "10.17.0.0/16"
+      - "10.16.0.0/16"
   PublicSubnetFrontCCIDR:
     Type: String
-    Default: 10.99.11.0/24
-
+    Default: "10.18.0.0/16"
+    AllowedValues:
+      - "10.18.0.0/16"
+      - "10.17.0.0/16"
+      - "10.16.0.0/16"
   PrivateSubnetAppACIDR:
     Type: String
-    Default: 10.99.20.0/24
+    Default: "10.18.0.0/16"
+    AllowedValues:
+      - "10.18.0.0/16"
+      - "10.17.0.0/16"
+      - "10.16.0.0/16"
   PrivateSubnetAppCCIDR:
     Type: String
-    Default: 10.99.21.0/24
-
+    Default: "10.18.0.0/16"
+    AllowedValues:
+      - "10.18.0.0/16"
+      - "10.17.0.0/16"
+      - "10.16.0.0/16"
   PrivateSubnetDataACIDR:
     Type: String
-    Default: 10.99.20.0/24
+    Default: "10.18.0.0/16"
+    AllowedValues:
+      - "10.18.0.0/16"
+      - "10.17.0.0/16"
+      - "10.16.0.0/16"
   PrivateSubnetDataCCIDR:
     Type: String
-    Default: 10.99.21.0/24
+    Default: "10.18.0.0/16"
+    AllowedValues:
+      - "10.18.0.0/16"
+      - "10.17.0.0/16"
+      - "10.16.0.0/16"
 
 # ------------------------------------------------------------#
 #   Resources
 # ------------------------------------------------------------#
 Resources:
-  # ------------------------------------------------------------#
-  #   VPC
-  # ------------------------------------------------------------#
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -46,23 +78,20 @@ Resources:
       InstanceTenancy: default
       Tags:
         - Key: Name
-          Value: vpc
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-vpc"
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
         - Key: Name
-          Value: igw
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-igw"
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
 
-  # ------------------------------------------------------------#
-  #   Subnet
-  # ------------------------------------------------------------#
   PublicSubnetFrontA:
     Type: AWS::EC2::Subnet
     Properties:
@@ -72,7 +101,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: front-subnet-a
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-front-subnet-a"
   PublicSubnetFrontC:
     Type: AWS::EC2::Subnet
     Properties:
@@ -82,7 +111,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: front-subnet-c
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-front-subnet-c"
 
   PrivateSubnetAppA:
     Type: AWS::EC2::Subnet
@@ -93,7 +122,7 @@ Resources:
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: app-subnet-a
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-app-subnet-a"
   PrivateSubnetAppC:
     Type: AWS::EC2::Subnet
     Properties:
@@ -103,7 +132,7 @@ Resources:
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: app-subnet-c
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-app-subnet-c"
 
   PrivateSubnetDataA:
     Type: AWS::EC2::Subnet
@@ -114,7 +143,7 @@ Resources:
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: data-subnet-a
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-data-subnet-a"
   PrivateSubnetDataC:
     Type: AWS::EC2::Subnet
     Properties:
@@ -124,18 +153,15 @@ Resources:
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: data-subnet-c
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-data-subnet-c"
 
-  # ------------------------------------------------------------#
-  #  RouteTable
-  # ------------------------------------------------------------#
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: pub-rt
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-pub-rt"
   DefaultPublicRoute:
     Type: AWS::EC2::Route
     DependsOn: InternetGatewayAttachment
@@ -160,7 +186,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: pri-rt
+          Value: !Sub "${ServicePrefix}-${EnvPrefix}-pri-rt"
   PrivateSubnetAppARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -182,107 +208,104 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable
       SubnetId: !Ref PrivateSubnetDataC
 
-  # ------------------------------------------------------------#
-  #   NAT
-  # ------------------------------------------------------------#
-  NatGatewayPublicA:
-    Type: AWS::EC2::NatGateway
-    DependsOn: NatGatewayPublicAEIP
-    Properties:
-      AllocationId: !GetAtt NatGatewayPublicAEIP.AllocationId
-      SubnetId: !Ref PublicSubnetFrontA
-      Tags:
-        - Key: Name
-          Value: nat
-  NatGatewayPublicAEIP:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-      Tags:
-        - Key: Name
-          Value: nat-eip
-  NatGatewayPrivateRoute:
-    Type: AWS::EC2::Route
-    DependsOn: NatGatewayPublicA
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGatewayPublicA
+  # NatGatewayPublicA:
+  #   Type: AWS::EC2::NatGateway
+  #   DependsOn: NatGatewayPublicAEIP
+  #   Properties:
+  #     AllocationId: !GetAtt NatGatewayPublicAEIP.AllocationId
+  #     SubnetId: !Ref PublicSubnetFrontA
+  #     Tags:
+  #       - Key: Name
+  #         Value: !Sub "${ServicePrefix}-${EnvPrefix}-nat"
+  # NatGatewayPublicAEIP:
+  #   Type: AWS::EC2::EIP
+  #   Properties:
+  #     Domain: vpc
+  #     Tags:
+  #       - Key: Name
+  #         Value: !Sub "${ServicePrefix}-${EnvPrefix}-nat-eip"
+  # NatGatewayPrivateRoute:
+  #   Type: AWS::EC2::Route
+  #   DependsOn: NatGatewayPublicA
+  #   Properties:
+  #     RouteTableId: !Ref PrivateRouteTable
+  #     DestinationCidrBlock: 0.0.0.0/0
+  #     NatGatewayId: !Ref NatGatewayPublicA
 
 # ------------------------------------------------------------#
-#   Output
+#   Outputs
 # ------------------------------------------------------------#
 Outputs:
   VPC:
     Value: !Ref VPC
     Export:
-      Name: vpc
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-vpc"
   VpcCIDR:
     Value: !Ref VpcCIDR
     Export:
-      Name: !Sub vpc-cidr
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-vpc-cidr"
 
   PublicSubnetFrontA:
     Value: !Ref PublicSubnetFrontA
     Export:
-      Name: front-subnet-a
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-front-subnet-a"
   PublicSubnetFrontACIDR:
     Value: !Ref PublicSubnetFrontACIDR
     Export:
-      Name: front-subnet-a-cidr
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-front-subnet-a-cidr"
   PublicSubnetFrontC:
     Value: !Ref PublicSubnetFrontC
     Export:
-      Name: front-subnet-c
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-front-subnet-c"
   PublicSubnetFrontCCIDR:
     Value: !Ref PublicSubnetFrontCCIDR
     Export:
-      Name: front-subnet-c-cidr
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-front-subnet-c-cidr"
 
   PrivateSubnetAppA:
     Value: !Ref PrivateSubnetAppA
     Export:
-      Name: app-subnet-a
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-app-subnet-a"
   PrivateSubnetAppACIDR:
     Value: !Ref PrivateSubnetAppACIDR
     Export:
-      Name: app-subnet-a-cidr
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-app-subnet-a-cidr"
   PrivateSubnetAppC:
     Value: !Ref PrivateSubnetAppC
     Export:
-      Name: app-subnet-c
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-app-subnet-c"
   PrivateSubnetAppCCIDR:
     Value: !Ref PrivateSubnetAppCCIDR
     Export:
-      Name: app-subnet-c-cidr
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-app-subnet-c-cidr"
 
   PrivateSubnetDataA:
     Value: !Ref PrivateSubnetDataA
     Export:
-      Name: data-subnet-a
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-data-subnet-a"
   PrivateSubnetDataACIDR:
     Value: !Ref PrivateSubnetDataACIDR
     Export:
-      Name: data-subnet-a-cidr
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-data-subnet-a-cidr"
   PrivateSubnetDataC:
     Value: !Ref PrivateSubnetDataC
     Export:
-      Name: data-subnet-c
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-data-subnet-c"
   PrivateSubnetDataCCIDR:
     Value: !Ref PrivateSubnetDataCCIDR
     Export:
-      Name: data-subnet-c-cidr
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-data-subnet-c-cidr"
 
   PublicRouteTable:
     Value: !Ref PublicRouteTable
     Export:
-      Name: pub-rt
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-pub-rt"
   PrivateRouteTable:
     Value: !Ref PrivateRouteTable
     Export:
-      Name: pri-rt
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-pri-rt"
 
   NatGatewayPublicAEIP:
     Value: !Ref NatGatewayPublicAEIP
     Export:
-      Name: nat-a-eip
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-nat-a-eip"

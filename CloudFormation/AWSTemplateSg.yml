@@ -2,45 +2,53 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Create SG
 
 # ------------------------------------------------------------#
-# Parameters
+#   Parameters
 # ------------------------------------------------------------#
+Parameters:
+  ServicePrefix:
+    Type: String
+    Default: "example"
+  EnvPrefix:
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - "dev"
+      - "stg"
+      - "prd"
 
 # ------------------------------------------------------------#
-# Resources
+#   Resources
 # ------------------------------------------------------------#
 Resources:
-  # ------------------------------------------------------------#
-  #   SG
-  # ------------------------------------------------------------#
   SecurityGroupFront:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub ${AWS::StackName} front
-      GroupName: front-sg
-      VpcId: !ImportValue vpc
+      GroupDescription: !Sub "SG for ${ServicePrefix}-${EnvPrefix}-front"
+      GroupName: !Sub "${ServicePrefix}-${EnvPrefix}-front-sg"
+      VpcId: !ImportValue "${ServicePrefix}-${EnvPrefix}-vpc"
       Tags:
         - Key: Name
-          Value: front-sg
+          Value: "${ServicePrefix}-${EnvPrefix}-front-sg"
 
   SecurityGroupApp:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub ${AWS::StackName} app
-      GroupName: app-sg
-      VpcId: !ImportValue vpc
+      GroupDescription: !Sub "SG for ${ServicePrefix}-${EnvPrefix}-app"
+      GroupName: !Sub "${ServicePrefix}-${EnvPrefix}-app-sg"
+      VpcId: !ImportValue "${ServicePrefix}-${EnvPrefix}-vpc"
       Tags:
         - Key: Name
-          Value: app-sg
+          Value: "${ServicePrefix}-${EnvPrefix}-app-sg"
 
   SecurityGroupData:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub ${AWS::StackName} data
-      GroupName: data-sg
-      VpcId: !ImportValue vpc
+      GroupDescription: !Sub "SG for ${ServicePrefix}-${EnvPrefix}-data"
+      GroupName: !Sub "${ServicePrefix}-${EnvPrefix}-data-sg"
+      VpcId: !ImportValue "${ServicePrefix}-${EnvPrefix}-vpc"
       Tags:
         - Key: Name
-          Value: data-sg
+          Value: "${ServicePrefix}-${EnvPrefix}-data-sg"
 
   FrontToFrontIngress:
     Type: AWS::EC2::SecurityGroupIngress
@@ -119,18 +127,18 @@ Resources:
       GroupId: SecurityGroupData.GroupId
 
 # ------------------------------------------------------------#
-# Output Parameters
+#   Outputs
 # ------------------------------------------------------------#
 Outputs:
   SecurityGroupFront:
     Value: !Ref SecurityGroupFront
     Export:
-      Name: front-sg
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-front-sg"
   SecurityGroupApp:
     Value: !Ref SecurityGroupApp
     Export:
-      Name: app-sg
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-app-sg"
   SecurityGroupData:
     Value: !Ref SecurityGroupData
     Export:
-      Name: data-sg
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-data-sg"

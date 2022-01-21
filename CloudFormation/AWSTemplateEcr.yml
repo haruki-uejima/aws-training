@@ -5,25 +5,40 @@ Description: Create ECR
 #   Parameters
 # ------------------------------------------------------------#
 Parameters:
-  Prefix:
+  ServicePrefix:
     Type: String
     Default: "example"
-    AllowedValues:
-      - "example"
-  ECSContainerName:
+  EnvPrefix:
     Type: String
-    Default: "example"
+    Default: "dev"
     AllowedValues:
-      - "example"
+      - "dev"
+      - "stg"
+      - "prd"
 
 # ------------------------------------------------------------#
 #   Resources
 # ------------------------------------------------------------#
 Resources:
-  # ------------------------------------------------------------#
-  #  ECR
-  # ------------------------------------------------------------#
   ECR:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: !Sub ${Prefix}/${ECSContainerName}
+      RepositoryName: !Sub ${ServicePrefix}/${EnvPrefix}
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Untagged images",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 7
+                },
+                "action": {"type": "expire"
+                }
+              }
+            ]
+          }

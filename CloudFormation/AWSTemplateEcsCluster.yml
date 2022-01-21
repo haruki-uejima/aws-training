@@ -2,25 +2,37 @@ AWSTemplateFormatVersion: “2010-09-09”
 Description: Create ECS Cluster
 
 # ------------------------------------------------------------#
+#   Parameters
+# ------------------------------------------------------------#
+Parameters:
+  ServicePrefix:
+    Type: String
+    Default: "example"
+  EnvPrefix:
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - "dev"
+      - "stg"
+      - "prd"
+
+# ------------------------------------------------------------#
 #   Resources
 # ------------------------------------------------------------#
 Resources:
-  # ------------------------------------------------------------#
-  #   ECS Cluster
-  # ------------------------------------------------------------#
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub “ecs-cluster”
+      ClusterName: !Sub "${ServicePrefix}-${EnvPrefix}-ecs-cluster"
       ClusterSettings:
         - Name: containerInsights
           Value: enabled
 
 # ------------------------------------------------------------#
-# Output Parameters
+#   Outputs
 # ------------------------------------------------------------#
 Outputs:
   ECSCluster:
     Value: !Ref ECSCluster
     Export:
-      Name: !Sub “ecs-cluster”
+      Name: !Sub "${ServicePrefix}-${EnvPrefix}-ecs-cluster"
