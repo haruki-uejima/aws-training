@@ -1,3 +1,3 @@
 # aws-training
 
-CloudFormation をいろいろ触ってみたやつ
+CloudFormationとかTerraformをいろいろ触ってみたやつ
