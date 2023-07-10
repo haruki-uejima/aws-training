@@ -1,0 +1,22 @@
+[
+  {
+    "name": "nginx-container",
+    "image": "nginx:latest",
+    "essential": true,
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-region": "ap-northeast-1",
+        "awslogs-create-group": "true",
+        "awslogs-stream-prefix": "ecs",
+        "awslogs-group": "/ecs/nginx"
+      }
+    },
+    "portMappings": [
+      {
+        "protocol": "tcp",
+        "containerPort": 80
+      }
+    ]
+  }
+]
